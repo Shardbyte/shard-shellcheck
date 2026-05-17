@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# No extension - found via additional_files: run (name match, not shebang scan)
+run_step() {
+    printf 'Running: %s\n' "${1:-unnamed}"
+}
+
+run_step "$@"

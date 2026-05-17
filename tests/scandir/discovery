@@ -1,0 +1,10 @@
+#!/usr/bin/env bashio
+# shellcheck shell=bash
+# bashio shebang - found via additional_files: discovery (not by shebang scan)
+
+discover_services() {
+    local prefix="${1:-service}"
+    printf '[discovery] scanning for %s\n' "${prefix}"
+}
+
+discover_services "$@"

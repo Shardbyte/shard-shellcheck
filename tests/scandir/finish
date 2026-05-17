@@ -1,0 +1,10 @@
+#!/usr/bin/env bashio
+# shellcheck shell=bash
+# bashio shebang - found via additional_files: finish (not by shebang scan)
+
+finish_step() {
+    local msg="${1:-done}"
+    printf '[finish] %s\n' "${msg}"
+}
+
+finish_step "$@"

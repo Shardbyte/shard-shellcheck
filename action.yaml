@@ -1,0 +1,286 @@
+name: "ShellCheck"
+author: "Shardbyte <saint@shardbyte.com>"
+description: "GitHub action for ShellCheck."
+inputs:
+  additional_files:
+    description: "A space separated list of additional filenames to check"
+    required: false
+    default: ""
+  ignore_paths:
+    description: "Paths to ignore when running ShellCheck"
+    required: false
+    default: ""
+  ignore_names:
+    description: "Names to ignore when running ShellCheck"
+    required: false
+    default: ""
+  severity:
+    description: "Minimum severity of errors to consider. Options: [error, warning, info, style]"
+    required: false
+    default: ""
+  check_together:
+    description: "Run shellcheck on _all_ files at once, instead of one at a time"
+    required: false
+    default: ""
+  scandir:
+    description: "Directory to be searched for files. Defaults to ."
+    required: false
+    default: "."
+  format:
+    description: "Output format (checkstyle, diff, gcc, json, json1, quiet, tty)"
+    required: false
+    default: "gcc"
+  version:
+    description: "Specify a concrete version of ShellCheck to use"
+    required: false
+    default: "stable"
+outputs:
+  files:
+    description: Newline-separated list of shell scripts found and checked
+    value: ${{ steps.check.outputs.filepaths }}
+  options:
+    description: The options used
+    value: ${{ steps.options.outputs.options }}
+branding:
+  icon: "terminal"
+  color: "gray-dark"
+runs:
+  using: "composite"
+  steps:
+    - name: Add problem matcher
+      shell: bash
+      env:
+        INPUT_FORMAT: ${{ inputs.format }}
+      run: |
+        set -euo pipefail
+        if [[ "${INPUT_FORMAT}" == "gcc" ]]; then
+          echo "::add-matcher::${{ github.action_path }}/.github/matchers/shellcheck.json"
+        fi
+
+    - name: Download shellcheck
+      shell: bash
+      env:
+        INPUT_VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+
+        if [[ "${{ runner.os }}" == "macOS" ]]; then
+          osvariant="darwin"
+        else
+          osvariant="linux"
+        fi
+
+        if [[ "${{ runner.arch }}" == "ARM64" ]]; then
+          arch="aarch64"
+        else
+          arch="x86_64"
+        fi
+
+        version="${INPUT_VERSION}"
+        if [[ "${version}" != "stable" && "${version}" != "latest" && "${version}" != v* ]]; then
+          version="v${version}"
+        fi
+
+        baseurl="https://github.com/koalaman/shellcheck/releases/download"
+        archive="${baseurl}/${version}/shellcheck-${version}.${osvariant}.${arch}.tar.xz"
+
+        curl -fLso "${{ github.action_path }}/sc.tar.xz" "${archive}" \
+          || { echo "::error::Failed to download ShellCheck ${version} for ${osvariant}/${arch}"; exit 1; }
+
+        tar -xf "${{ github.action_path }}/sc.tar.xz" -C "${{ github.action_path }}"
+        mv "${{ github.action_path }}/shellcheck-${version}/shellcheck" \
+          "${{ github.action_path }}/shellcheck"
+
+    - name: Display shellcheck version
+      shell: bash
+      run: |
+        set -euo pipefail
+        "${{ github.action_path }}/shellcheck" --version
+
+    - name: Set options
+      shell: bash
+      id: options
+      env:
+        INPUT_SEVERITY: ${{ inputs.severity }}
+        INPUT_FORMAT: ${{ inputs.format }}
+      run: |
+        set -euo pipefail
+        declare -a options
+        if [[ -n "${INPUT_SEVERITY}" ]]; then
+          options+=("-S" "${INPUT_SEVERITY}")
+        fi
+        options+=("--format=${INPUT_FORMAT}")
+        echo "options=${options[*]}" >> "$GITHUB_OUTPUT"
+
+    - name: Gather excluded paths
+      shell: bash
+      id: exclude
+      env:
+        INPUT_IGNORE_PATHS: ${{ inputs.ignore_paths }}
+        INPUT_IGNORE_NAMES: ${{ inputs.ignore_names }}
+      run: |
+        declare -a excludes
+        set -f
+
+        excludes+=("! -path *./.git/*")
+        excludes+=("! -path *.go")
+        excludes+=("! -path */mvnw")
+
+        for path in ${INPUT_IGNORE_PATHS}; do
+          excludes+=("! -path *./$path/*")
+          excludes+=("! -path */$path/*")
+          excludes+=("! -path $path")
+        done
+
+        for name in ${INPUT_IGNORE_NAMES}; do
+          excludes+=("! -name $name")
+        done
+
+        echo "excludes=${excludes[*]}" >> "$GITHUB_OUTPUT"
+
+        set +f
+
+    - name: Gather additional files
+      shell: bash
+      id: additional
+      env:
+        INPUT_ADDITIONAL_FILES: ${{ inputs.additional_files }}
+      run: |
+        set -eo pipefail
+        files=()
+        for file in ${INPUT_ADDITIONAL_FILES}; do
+          files+=("-o" "-name" "*${file}")
+        done
+        if [[ ${#files[@]} -gt 0 ]]; then
+          echo "files=${files[*]}" >> "$GITHUB_OUTPUT"
+        else
+          echo "files=" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Run the check
+      shell: bash
+      id: check
+      env:
+        INPUT_SCANDIR: ${{ inputs.scandir }}
+        INPUT_CHECK_TOGETHER: ${{ inputs.check_together }}
+        INPUT_EXCLUDE_ARGS: ${{ steps.exclude.outputs.excludes }}
+        INPUT_ADDITIONAL_FILE_ARGS: ${{ steps.additional.outputs.files }}
+        INPUT_SHELLCHECK_OPTIONS: ${{ steps.options.outputs.options }}
+      run: |
+        statuscode=0
+        declare -a filepaths
+        shebangregex="^#! */[^ ]*/(env *)?[abk]*sh"
+
+        set -f
+
+        while IFS= read -r -d '' file; do
+          filepaths+=("$file")
+        done < <(find "${INPUT_SCANDIR}" \
+            ${INPUT_EXCLUDE_ARGS} \
+            -type f \
+            '(' \
+            -name '*.bash' \
+            -o -name '.bashrc' \
+            -o -name 'bashrc' \
+            -o -name '.bash_aliases' \
+            -o -name '.bash_completion' \
+            -o -name '.bash_login' \
+            -o -name '.bash_logout' \
+            -o -name '.bash_profile' \
+            -o -name 'bash_profile' \
+            -o -name '*.ksh' \
+            -o -name 'suid_profile' \
+            -o -name '*.zsh' \
+            -o -name '.zlogin' \
+            -o -name 'zlogin' \
+            -o -name '.zlogout' \
+            -o -name 'zlogout' \
+            -o -name '.zprofile' \
+            -o -name 'zprofile' \
+            -o -name '.zsenv' \
+            -o -name 'zsenv' \
+            -o -name '.zshrc' \
+            -o -name 'zshrc' \
+            -o -name '*.sh' \
+            -o -path '*/.profile' \
+            -o -path '*/profile' \
+            -o -name '*.shlib' \
+            ${INPUT_ADDITIONAL_FILE_ARGS} \
+            ')' \
+            -print0)
+
+        while IFS= read -r -d '' file; do
+          head -n1 "$file" | grep -Eqs "$shebangregex" || continue
+          filepaths+=("$file")
+        done < <(find "${INPUT_SCANDIR}" \
+            ${INPUT_EXCLUDE_ARGS} \
+            -type f ! -name '*.*' -perm /111 \
+            -print0)
+
+        set +f
+
+        if [[ ${#filepaths[@]} -eq 0 ]]; then
+          echo "No shell scripts found. Nothing to check."
+          echo "statuscode=0" >> "$GITHUB_OUTPUT"
+          echo "filepaths=" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        if [[ -n "${INPUT_CHECK_TOGETHER}" ]]; then
+          "${{ github.action_path }}/shellcheck" \
+            ${INPUT_SHELLCHECK_OPTIONS} \
+            "${filepaths[@]}" || statuscode=$?
+        else
+          for file in "${filepaths[@]}"; do
+            "${{ github.action_path }}/shellcheck" \
+              ${INPUT_SHELLCHECK_OPTIONS} \
+              "$file" || statuscode=$?
+          done
+        fi
+
+        {
+          echo "filepaths<<EOF"
+          printf '%s\n' "${filepaths[@]}"
+          echo "EOF"
+        } >> "$GITHUB_OUTPUT"
+        echo "statuscode=${statuscode}" >> "$GITHUB_OUTPUT"
+
+    - name: Step summary
+      if: always()
+      shell: bash
+      env:
+        INPUT_SCANDIR: ${{ inputs.scandir }}
+        STATUSCODE: ${{ steps.check.outputs.statuscode }}
+        FILEPATHS: ${{ steps.check.outputs.filepaths }}
+      run: |
+        set -euo pipefail
+        {
+          echo "## ShellCheck Results"
+          echo ""
+          if [[ -z "${FILEPATHS:-}" ]]; then
+            echo ":white_check_mark: No shell scripts found in \`${INPUT_SCANDIR}\`."
+          elif [[ "${STATUSCODE:-0}" == "0" ]]; then
+            echo ":white_check_mark: All shell scripts passed ShellCheck."
+          else
+            echo ":x: ShellCheck found issues (exit code: ${STATUSCODE})."
+          fi
+        } >> "$GITHUB_STEP_SUMMARY"
+
+    - name: Remove problem matcher
+      if: always()
+      shell: bash
+      env:
+        INPUT_FORMAT: ${{ inputs.format }}
+      run: |
+        set -euo pipefail
+        if [[ "${INPUT_FORMAT}" == "gcc" ]]; then
+          echo "::remove-matcher owner=shellcheck-error::"
+          echo "::remove-matcher owner=shellcheck-warning::"
+          echo "::remove-matcher owner=shellcheck-info::"
+        fi
+
+    - name: Exit action
+      shell: bash
+      env:
+        STATUSCODE: ${{ steps.check.outputs.statuscode }}
+      run: exit "${STATUSCODE:-1}"

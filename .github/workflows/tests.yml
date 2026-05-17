@@ -1,0 +1,255 @@
+name: Tests
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  additional_files:
+    name: additional_files
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Run ShellCheck
+        uses: ./
+        id: check
+        with:
+          additional_files: run finish discovery
+          ignore_paths: ignore violations
+          scandir: tests
+
+      - name: Verify check
+        run: |
+          if [[ ! "${{ steps.check.outputs.files }}" =~ tests/scandir/run ]]; then
+            echo "::error:: Expected file tests/scandir/run not found in ${{ steps.check.outputs.files }}"
+            exit 1
+          elif [[ ! "${{ steps.check.outputs.files }}" =~ tests/scandir/finish ]]; then
+            echo "::error:: Expected file tests/scandir/finish not found in ${{ steps.check.outputs.files }}"
+            exit 1
+          elif [[ ! "${{ steps.check.outputs.files }}" =~ tests/scandir/discovery ]]; then
+            echo "::error:: Expected file tests/scandir/discovery not found in ${{ steps.check.outputs.files }}"
+            exit 1
+          fi
+
+  check_together:
+    name: check_together
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Run ShellCheck
+        uses: ./
+        id: check
+        with:
+          ignore_paths: ignore violations
+          check_together: true
+
+      - name: Verify check
+        run: |
+          expect="tests/test.bash"
+          notexpect="tests/ignore/ignore.bash"
+
+          if [[ ! "${{ steps.check.outputs.files }}" =~ $expect ]]; then
+            echo "::error:: Expected file $expect not found in ${{ steps.check.outputs.files }}"
+            exit 1
+          elif [[ "${{ steps.check.outputs.files }}" =~ $notexpect ]]; then
+            echo "::error:: Unexpected file $notexpect found in ${{ steps.check.outputs.files }}"
+            exit 1
+          fi
+
+  ignore_names:
+    name: ignore_names
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Run ShellCheck
+        uses: ./
+        id: check
+        with:
+          ignore_paths: ignore violations
+          ignore_names: ignore_single_file.sh
+
+      - name: Verify check
+        run: |
+          expect="tests/test.bash"
+          notexpect="tests/ignore_single_file.sh"
+
+          if [[ ! "${{ steps.check.outputs.files }}" =~ $expect ]]; then
+            echo "::error:: Expected file $expect not found in ${{ steps.check.outputs.files }}"
+            exit 1
+          elif [[ "${{ steps.check.outputs.files }}" =~ $notexpect ]]; then
+            echo "::error:: Unexpected file $notexpect found in ${{ steps.check.outputs.files }}"
+            exit 1
+          fi
+
+  ignore_paths:
+    name: ignore_paths
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Run ShellCheck
+        uses: ./
+        id: check
+        with:
+          ignore_paths: ignore violations ./tests/ignore_some/duplicate_name.bash **/ignore_some/ignore.bash
+
+      - name: Verify check
+        run: |
+          fail=false
+
+          expect="tests/test.bash"
+          if [[ ! "${{ steps.check.outputs.files }}" =~ $expect ]]; then
+            echo "::error:: Expected file $expect not found in ${{ steps.check.outputs.files }}"
+            fail=true
+          fi
+
+          expect="tests/duplicate_name.bash"
+          if [[ ! "${{ steps.check.outputs.files }}" =~ $expect ]]; then
+            echo "::error:: Expected file $expect not found in ${{ steps.check.outputs.files }}"
+            fail=true
+          fi
+
+          notexpect="tests/ignore_some/duplicate_name.bash"
+          if [[ "${{ steps.check.outputs.files }}" =~ $notexpect ]]; then
+            echo "::error:: Unexpected file $notexpect found in ${{ steps.check.outputs.files }}"
+            fail=true
+          fi
+
+          notexpect="tests/ignore/ignore.bash"
+          if [[ "${{ steps.check.outputs.files }}" =~ $notexpect ]]; then
+            echo "::error:: Unexpected file $notexpect found in ${{ steps.check.outputs.files }}"
+            fail=true
+          fi
+
+          notexpect="tests/ignore_some/ignore.bash"
+          if [[ "${{ steps.check.outputs.files }}" =~ $notexpect ]]; then
+            echo "::error:: Unexpected file $notexpect found in ${{ steps.check.outputs.files }}"
+            fail=true
+          fi
+
+          if $fail; then
+            exit 1
+          fi
+
+  scandir:
+    name: scandir
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Run ShellCheck
+        uses: ./
+        id: one
+        with:
+          scandir: tests/scandir
+
+      - name: Verify check
+        run: |
+          expect="tests/scandir/run[[:space:]]me.bash"
+          notexpect="tests/test.bash"
+
+          if [[ ! "${{ steps.one.outputs.files }}" =~ $expect ]]; then
+            echo "::error:: Expected file $expect not found in ${{ steps.one.outputs.files }}"
+            exit 1
+          elif [[ "${{ steps.one.outputs.files }}" =~ $notexpect ]]; then
+            echo "::error:: Unexpected file $notexpect found in ${{ steps.one.outputs.files }}"
+            exit 1
+          fi
+
+      - name: Run ShellCheck
+        uses: ./
+        id: two
+        with:
+          scandir: './tests/scandir'
+          ignore_paths: ignore
+
+      - name: Verify check
+        run: |
+          expect="tests/scandir/test.bash"
+          notexpect="tests/test.bash"
+
+          if [[ ! "${{ steps.two.outputs.files }}" =~ $expect ]]; then
+            echo "::error:: Expected file $expect not found in ${{ steps.two.outputs.files }}"
+            exit 1
+          elif [[ "${{ steps.two.outputs.files }}" =~ $notexpect ]]; then
+            echo "::error:: Unexpected file $notexpect found in ${{ steps.two.outputs.files }}"
+            exit 1
+          fi
+
+  violations:
+    name: violations
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Run ShellCheck on violations fixtures
+        uses: ./
+        id: check
+        continue-on-error: true
+        with:
+          scandir: tests/violations
+
+      - name: Verify issues were detected
+        shell: bash
+        run: |
+          if [[ "${{ steps.check.outcome }}" != "failure" ]]; then
+            echo "::error::Expected ShellCheck to fail but outcome was: ${{ steps.check.outcome }}"
+            exit 1
+          fi
+          echo "ShellCheck correctly detected violations"

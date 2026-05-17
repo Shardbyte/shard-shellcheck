@@ -1,0 +1,13 @@
+#!/bin/bash
+set -euo pipefail
+
+# Executable with no extension - discovered via shebang scan when chmod +x
+main() {
+    local cmd="${1:-help}"
+    case "${cmd}" in
+        help) printf 'Usage: %s <command>\n' "$0" ;;
+        *) printf 'Unknown command: %s\n' "${cmd}"; return 1 ;;
+    esac
+}
+
+main "$@"

@@ -1,0 +1,43 @@
+{
+  "problemMatcher": [
+    {
+      "owner": "shellcheck-error",
+      "severity": "error",
+      "pattern": [
+        {
+          "regexp": "^(.+):(\\d+):(\\d+):\\s+error:\\s+(.+)$",
+          "file": 1,
+          "line": 2,
+          "column": 3,
+          "message": 4
+        }
+      ]
+    },
+    {
+      "owner": "shellcheck-warning",
+      "severity": "warning",
+      "pattern": [
+        {
+          "regexp": "^(.+):(\\d+):(\\d+):\\s+warning:\\s+(.+)$",
+          "file": 1,
+          "line": 2,
+          "column": 3,
+          "message": 4
+        }
+      ]
+    },
+    {
+      "owner": "shellcheck-info",
+      "severity": "warning",
+      "pattern": [
+        {
+          "regexp": "^(.+):(\\d+):(\\d+):\\s+(?:info|note|style):\\s+(.+)$",
+          "file": 1,
+          "line": 2,
+          "column": 3,
+          "message": 4
+        }
+      ]
+    }
+  ]
+}
