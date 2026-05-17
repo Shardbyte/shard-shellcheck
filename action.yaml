@@ -1,6 +1,6 @@
-name: "ShellCheck"
+name: "Shard ShellCheck"
 author: "Shardbyte <saint@shardbyte.com>"
-description: "GitHub action for ShellCheck."
+description: "Run ShellCheck across your shell scripts with Linux and macOS support on x86_64 and ARM64."
 inputs:
   additional_files:
     description: "A space separated list of additional filenames to check"
